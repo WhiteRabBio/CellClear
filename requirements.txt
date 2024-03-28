@@ -1,0 +1,6 @@
+pandas
+numpy
+scipy
+scanpy
+leidenalg
+anndata
