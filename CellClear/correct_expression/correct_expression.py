@@ -1,4 +1,4 @@
-from anndata import AnnData
+from anndata import AnnData, logging
 from typing import List, Tuple, Optional
 from collections import Counter
 from sklearn.decomposition import non_negative_factorization
@@ -17,10 +17,9 @@ import numpy as np
 import pandas as pd
 import sys
 import re
-import anndata
 import warnings
 
-anndata.logging.anndata_logger.addFilter(
+logging.anndata_logger.addFilter(
     lambda r: not r.getMessage().startswith("storing")
               and r.getMessage().endswith("as categorical.")
               and r.getMessage().endswith(", copying.")
@@ -345,15 +344,20 @@ def deconvolution(
     # Perform deconvolution for each real cell
     ref_np = ref.to_numpy()
     for i in range(n):
-        pred = nnls(ref_np, y.iloc[:, i])
-        prop = pred[0] / np.sum(pred[0])
-        prop[prop < min_prop] = 0
-        prop = prop / np.sum(prop)
-        result[i, :] = prop
+        try:
+            pred = nnls(ref_np, y.iloc[:, i])
+            prop = pred[0] / np.sum(pred[0])
+            prop[prop < min_prop] = 0
+            prop = prop / np.sum(prop)
+            result[i, :] = prop
+        except RuntimeError: # Maximum number of iterations reached
+            result[i, :] = 0
 
     # Create a DataFrame from the result matrix, drop rows with NaN values
     # Filter results based on similarity threshold
     result = pd.DataFrame(result, index=background_counts.obs_names, columns=ref.columns).dropna()
+    failed_bc = result.T.sum()[result.T.sum() == 0].shape[0]
+    print(f'{failed_bc} out of {result.shape[0]} cell barcodes failed for deconvolution...')
     max_col_indices = result.idxmax(axis=1)
     max_col_values = result.apply(lambda row: row[max_col_indices[row.name]], axis=1)
     result['max_indices'] = max_col_indices
@@ -566,10 +570,7 @@ def contaminated_genes_detection(
         genes += gene_tmp
 
     # only need genes existed in N background clusters
-    # count = Counter(genes)
-    # contaminated_genes = [g for g, n in count.items() if n >= round(len(all) * min_cluster_frac)]
     contaminated_genes = list(set(genes))
-
     exp_percent = calculate_expression_percentage(counts, contaminated_genes, slot)
     filtered_contaminated_genes = []
     for g in contaminated_genes:

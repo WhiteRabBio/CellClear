@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "CellClear"
 description = "Estimating and removing ambient expression in scRNA-seq data"
 requires-python = ">=3.9"
-license = "BSD-3-clause"
+license = {file = "LICENSE"}
 authors = [{name = "Wanxiang Huang"}, {name = "Zhengzong Qian"}]
 keywords = ["scRNA-seq", "bioinformatics"]
 classifiers = [
@@ -26,6 +26,9 @@ dynamic = ["version", "dependencies"]
 [project.scripts]
 CellClear = "CellClear.base_cli:main"
 
+[tool.setuptools]
+py-modules = []
+
 [tool.setuptools.dynamic]
-version = {attr = "cellbender.__version__"}
+version = {attr = "CellClear.__version__"}
 dependencies = {file = ["requirements.txt"]}

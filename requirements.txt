@@ -1,6 +1,8 @@
 pandas
 numpy
 scipy
-scanpy
+scanpy==1.9.3
 leidenalg
-anndata
+anndata==0.7.8
+scikit-learn
+statsmodels
