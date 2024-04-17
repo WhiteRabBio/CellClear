@@ -28,7 +28,10 @@ class CLI(AbstractCLI):
         try:
             args.filtered_matrix = os.path.expanduser(args.filtered_matrix)
             args.raw_matrix = os.path.expanduser(args.raw_matrix)
-            os.makedirs(f'{args.output_dir}/CellClear_clean_matrix', exist_ok=True)
+            if args.evaluation_only == 'True':
+                print('Only output contamination level...')
+            else:
+                os.makedirs(f'{args.output_dir}/CellClear_clean_matrix', exist_ok=True)
         except TypeError:
             raise ValueError(
                 "Problem with provided input and output paths."

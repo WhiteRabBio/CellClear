@@ -27,7 +27,7 @@ dynamic = ["version", "dependencies"]
 CellClear = "CellClear.base_cli:main"
 
 [tool.setuptools]
-py-modules = []
+packages = ["CellClear"]
 
 [tool.setuptools.dynamic]
 version = {attr = "CellClear.__version__"}

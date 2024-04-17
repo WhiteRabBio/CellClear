@@ -3,6 +3,6 @@ numpy
 scipy
 scanpy==1.9.3
 leidenalg
-anndata==0.7.8
+anndata>=0.8.0
 scikit-learn
 statsmodels
