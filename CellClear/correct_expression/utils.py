@@ -143,17 +143,30 @@ def neighbors(counts):
     """
     Wrapper function for sc.pp.neighbors()
     """
+    use_rep = 'X_pca_harmony' if 'X_pca_harmony' in counts.obsm else 'X_pca'
     sc.pp.neighbors(
         counts,
         n_neighbors=15,
         n_pcs=25,
-        use_rep=None,
+        use_rep=use_rep,
         knn=True,
         random_state=0,
         method='umap',
         metric='euclidean',
         key_added=None,
         copy=False
+    )
+
+
+def harmony(counts, batch_name):
+    """
+    Wrapper function for sc.external.pp.harmony_integrate
+    """
+    sc.external.pp.harmony_integrate(
+        counts,
+        key=batch_name,
+        basis='X_pca',
+        adjusted_basis='X_pca_harmony'
     )
 
 

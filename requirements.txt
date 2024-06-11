@@ -6,3 +6,6 @@ leidenalg
 anndata>=0.8.0
 scikit-learn
 statsmodels
+statannot==0.2.3
+seaborn==0.11.2
+harmonypy

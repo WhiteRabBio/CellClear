@@ -593,9 +593,10 @@ def contaminated_genes_detection(
 
     distance_result = distance_result.loc[filtered_contaminated_genes]
     top10_contaminated_genes = distance_result.mean(axis=1).sort_values(ascending=False)[:10].index.tolist()
+    top20_contaminated_genes = distance_result.mean(axis=1).sort_values(ascending=False)[:20].index.tolist()
     contaminated_percent = distance_result.loc[top10_contaminated_genes].mean(axis=1).mean()
 
-    contamination_metric = {'Top 10 Contamination_Genes': ",".join(top10_contaminated_genes),
+    contamination_metric = {'Top 20 Contamination_Genes': ",".join(top20_contaminated_genes),
                             'Contamination_Level': contaminated_percent}
     print(f'Contamination Genes: {",".join(top10_contaminated_genes)}')
     print(f'Contamination Level: {round(contaminated_percent, 3)}')

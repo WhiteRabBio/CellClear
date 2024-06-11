@@ -16,7 +16,7 @@ all <- NormalizeData(all, normalization.method = "LogNormalize", scale.factor = 
 all <- FindVariableFeatures(all, selection.method = "vst", nfeatures = 3000)
 all.genes <- rownames(all)
 all <- ScaleData(all, features = all.genes)
-all <- RunPCA(all, features = VariableFeatures(all), npcs = 40, verbose = FALSE)
+all <- RunPCA(all, features = VariableFeatures(all), npcs = 50, verbose = FALSE)
 all <- FindNeighbors(all, dims = 1:30)
 all <- FindClusters(all, resolution = 1.0)
 all <- RunUMAP(all, dims = 1:30)
