@@ -28,7 +28,7 @@ def add_subparser_args(subparsers: argparse) -> argparse:
                            dest='raw_matrix',
                            required=True,
                            help="matrix before cell calling, "
-                                "support `filtered_feature_bc_matrix` from cellranger"
+                                "support `raw_feature_bc_matrix` from cellranger"
                                 "or a normal matrix (row as genes, column as barcodes")
     subparser.add_argument("--environ_range", nargs=None,
                            dest='environ_range', default=[60, 100],

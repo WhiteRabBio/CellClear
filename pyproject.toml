@@ -7,7 +7,7 @@ name = "CellClear"
 description = "Estimating and removing ambient expression in scRNA-seq data"
 requires-python = ">=3.9"
 license = {file = "LICENSE"}
-authors = [{name = "Wanxiang Huang"}]
+authors = [{name = "WhiteRabBio"}]
 keywords = ["scRNA-seq", "bioinformatics"]
 classifiers = [
     "Development Status :: 3 - Alpha",
