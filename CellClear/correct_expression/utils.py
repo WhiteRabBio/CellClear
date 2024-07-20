@@ -193,13 +193,13 @@ def umap(counts):
     )
 
 
-def leiden(counts):
+def leiden(counts, resol=1.2):
     """
     Wrapper function for sc.tl.leiden
     """
     sc.tl.leiden(
         counts,
-        resolution=1.2,
+        resolution=resol,
         restrict_to=None,
         random_state=0,
         key_added='cluster',
@@ -257,7 +257,7 @@ def output_10x_matrix(data, matrix_dir):
     )
 
 
-def cells_cluster(counts: AnnData):
+def cells_cluster(counts: AnnData, resol: float = 1.2):
     """Wrapper function from scanpy"""
 
     print(f"Fetch clustering info from data...")
@@ -267,5 +267,5 @@ def cells_cluster(counts: AnnData):
     pca(counts)
     neighbors(counts)
     umap(counts)
-    leiden(counts)
+    leiden(counts, resol)
     find_marker_genes(counts)

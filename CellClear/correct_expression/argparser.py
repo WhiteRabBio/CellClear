@@ -48,6 +48,10 @@ def add_subparser_args(subparsers: argparse) -> argparse:
                            dest='roc_threshold', default=0.6,
                            required=False,
                            help="roc threshold to separate ambient and clean cluster")
+    subparser.add_argument("--resolution", nargs=None, type=float,
+                           dest='resolution', default=1.2,
+                           required=False,
+                           help="resolution for clustering")
     subparser.add_argument("--output", nargs=None, type=str,
                            dest='output_dir', default=None,
                            required=True,

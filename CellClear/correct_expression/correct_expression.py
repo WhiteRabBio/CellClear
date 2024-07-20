@@ -30,6 +30,7 @@ warnings.filterwarnings("ignore")
 def _preprocess_data(
         filtered_mtx_path: str,
         raw_mtx_path: str,
+        resolution: float = 1.2,
         min_background_counts_num: int = 5000,
         min_cluster_num: int = 50,
         environ_range: List[int] = None,
@@ -83,7 +84,7 @@ def _preprocess_data(
 
     # fetch the clustering info
     filtered_counts = _exclude_genes(filtered_counts, black_gene_list=black_gene_list)
-    cells_cluster(filtered_counts)
+    cells_cluster(filtered_counts, resol=resolution)
     num_cells = Counter(filtered_counts.obs['cluster'])
     clu_used = [clu for clu, num in num_cells.items() if num > min_cluster_num]
     filtered_counts = filtered_counts[filtered_counts.obs['cluster'].isin(clu_used)]

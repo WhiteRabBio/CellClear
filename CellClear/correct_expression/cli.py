@@ -58,6 +58,7 @@ def correct_expression(args):
     filtered_counts, background_counts = _preprocess_data(
         filtered_mtx_path=args.filtered_matrix,
         raw_mtx_path=args.raw_matrix,
+        resolution=args.resolution,
         min_background_counts_num=args.min_bg_num,
         environ_range=args.environ_range)
     usages, spectra, _nmf_kwargs = identify_module(
