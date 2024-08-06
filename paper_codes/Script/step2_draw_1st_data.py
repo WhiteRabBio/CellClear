@@ -255,9 +255,3 @@ def draw_fig_2D():
     ax.tick_params(axis='y', labelsize=12)
     plt.savefig(f'figure/Cont_estimate_boxplot.pdf', dpi=300, bbox_inches="tight")
     plt.close()
-
-
-draw_fig_2AandB()
-draw_fig_sup1C()
-draw_fig_2C()
-draw_fig_2D()
