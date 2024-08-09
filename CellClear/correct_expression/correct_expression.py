@@ -15,7 +15,6 @@ from scanpy.preprocessing._utils import _get_mean_var
 import scanpy as sc
 import numpy as np
 import pandas as pd
-import sys
 import re
 import warnings
 
@@ -33,7 +32,8 @@ def _preprocess_data(
         resolution: float = 1.2,
         min_background_counts_num: int = 5000,
         min_cluster_num: int = 50,
-        environ_range: List[int] = None,
+        max_umi_count: int = 500,
+        environ_range: List[int] = [60, 100],
         black_gene_list: List[str] = None,
 ) -> Tuple[AnnData, AnnData]:
     """\
@@ -49,6 +49,8 @@ def _preprocess_data(
         minimum barcodes from background, Too few may result in a lack of background information
     min_cluster_num
         minimum cluster number
+    max_umi_count
+        maximum umi count for selecting background barcodes
     environ_range
         umi range for selecting background barcodes
     black_gene_list
@@ -64,30 +66,33 @@ def _preprocess_data(
     raw_counts = _load_data(raw_mtx_path)
 
     # extract background barcodes
-    common_barcodes = list(set(filtered_counts.obs_names) & set(raw_counts.obs_names))
-    if len(common_barcodes) / filtered_counts.shape[0] <= 0.8:
-        sys.exit('raw matrix and filtered matrix may not come from a same sample.')
+    common_barcodes = np.intersect1d(filtered_counts.obs_names, raw_counts.obs_names)
+    if common_barcodes.shape[0] / filtered_counts.shape[0] <= 0.8:
+        raise Exception('raw matrix and filtered matrix may not come from a same sample.')
 
-    background_counts = raw_counts[
-        ~raw_counts.obs_names.isin(common_barcodes)]
+    background_counts = raw_counts[~raw_counts.obs_names.isin(common_barcodes)]
     background_counts = _exclude_genes(background_counts)
     background_counts.obs['umis'] = np.array(background_counts.X.sum(axis=1)).squeeze()
+
+    # prevent getting stuck in an infinite loop
     background_counts_num = 0
-    while background_counts_num <= min_background_counts_num:
-        col_indices = (background_counts.obs['umis'] > environ_range[0]) & \
-                      (background_counts.obs['umis'] < environ_range[1])
-        background_counts_num = col_indices[col_indices].count()
+    while (background_counts_num <= min_background_counts_num) \
+            and (environ_range[1] < max_umi_count):
+        col_indices = background_counts.obs['umis'].between(
+            environ_range[0], environ_range[1], inclusive='neither'
+        )
+        background_counts_num = col_indices.sum()
         environ_range[1] += 10
-        if environ_range[1] >= 500:
-            break
     background_counts = background_counts[col_indices, :]
 
     # fetch the clustering info
     filtered_counts = _exclude_genes(filtered_counts, black_gene_list=black_gene_list)
     cells_cluster(filtered_counts, resol=resolution)
-    num_cells = Counter(filtered_counts.obs['cluster'])
-    clu_used = [clu for clu, num in num_cells.items() if num > min_cluster_num]
-    filtered_counts = filtered_counts[filtered_counts.obs['cluster'].isin(clu_used)]
+    filtered_counts = filtered_counts[
+        filtered_counts.obs['cluster'].astype('str').map(
+            filtered_counts.obs['cluster'].astype('str').value_counts()
+        ) > min_cluster_num
+    ]
 
     # filter genes, Only keep genes in both Anndata objects
     keep_genes = sorted(list(set(filtered_counts.var_names) & set(background_counts.var_names)))
@@ -351,7 +356,7 @@ def deconvolution(
             prop[prop < min_prop] = 0
             prop = prop / np.sum(prop)
             result[i, :] = prop
-        except RuntimeError: # Maximum number of iterations reached
+        except RuntimeError:  # Maximum number of iterations reached
             result[i, :] = 0
 
     # Create a DataFrame from the result matrix, drop rows with NaN values
@@ -515,6 +520,8 @@ def contaminated_genes_detection(
         min_prop: float = 0.1,
         similarity: float = 0.9,
         min_cell_num: float = 10,
+        exp_pct: float = 0,
+        top_cont_genes: int = 20,
         slot: str = 'counts'
 ) -> object:
     """\
@@ -536,6 +543,10 @@ def contaminated_genes_detection(
         The similarity threshold for component selection in deconvolution. Default is 0.9.
     min_cell_num
         The minimum number of cells to consider for a component. Default is 10.
+    exp_pct
+        The minimum percentage of genes expressed in potential ambient clusters. Default is 0.
+    top_cont_genes
+        The number of ambient genes shown and to calculate ambient level. Default is 20.
     slot
         The slot name for data extraction. Default is 'counts'.
 
@@ -552,7 +563,7 @@ def contaminated_genes_detection(
     print('Find background barcodes that exhibit similar expression patterns to the foreground cluster...')
     deconv_result = deconvolution(background_counts, spectra, ref, min_prop, similarity, min_cell_num)
     if len(deconv_result) == 0:
-        sys.exit("No barcodes in background similar to cluster from real cell barcodes")
+        raise Exception('No barcodes in background similar to cluster from real cell barcodes')
     background_counts = background_counts[deconv_result.index.tolist(), :]
     background_counts.obs['cluster'] = deconv_result['max_indices'].astype('category')
 
@@ -560,49 +571,42 @@ def contaminated_genes_detection(
     background_ave = calculate_average_expression(background_counts, list(background_counts.var_names), slot)
     counts_ave = calculate_average_expression(counts, list(counts.var_names), slot)
 
+    print('Perform smooth spline...')
     all = calculate_distance(counts_ave, background_ave)
 
     # filter p.adj of genes in each cluster if larger than 0.05
-    genes = []
-    for i in range(len(all)):
-        tmp = all[i]
-        tmp = tmp[tmp['p.adj'] <= 0.05]
-        gene_tmp = tmp['Gene'].values.tolist()
-        genes += gene_tmp
+    contaminated_genes = list({gene for tmp in all for gene in tmp.loc[tmp['p.adj'] <= 0.05, 'Gene']})
 
     # only need genes existed in N background clusters
-    contaminated_genes = list(set(genes))
     exp_percent = calculate_expression_percentage(counts, contaminated_genes, slot)
-    filtered_contaminated_genes = []
-    for g in contaminated_genes:
-        if exp_percent.loc[g].min() > 0:
-            filtered_contaminated_genes.append(g)
+    filtered_contaminated_genes = [g for g in contaminated_genes if exp_percent.loc[g].min() > exp_pct]
 
-    # generate a distance matrix for evacuate contamination level
-    distance_result = pd.DataFrame(
-        0,
-        columns=background_counts.obs['cluster'].cat.categories,
-        index=background_counts.var_names
+    # evacuate contamination level
+    distance_result = pd.concat(all)
+    distance_result = (
+        distance_result
+        .loc[
+            distance_result['Gene'].isin(filtered_contaminated_genes) &
+            (distance_result['p.adj'] <= 0.05) &
+            (distance_result['bg_mean_expr'] > 0)
+            ]
+        .assign(cont_pct=lambda df: df['distance'] / df['mean_expr'])
+        .groupby('Gene')
+        .agg(average_distance=('distance', 'mean'), average_cont_pct=('cont_pct', 'mean'))
     )
-    for i in range(len(all)):
-        clu = background_ave.columns[i]
-        tmp = all[i]
-        tmp = tmp[tmp['Gene'].isin(filtered_contaminated_genes)]
-        tmp = tmp[tmp['p.adj'] <= 0.05]
-        tmp.index = tmp['Gene']
-        distance_result.loc[tmp.index, clu] = tmp['distance']
 
-    distance_result = distance_result.loc[filtered_contaminated_genes]
-    top10_contaminated_genes = distance_result.mean(axis=1).sort_values(ascending=False)[:10].index.tolist()
-    top20_contaminated_genes = distance_result.mean(axis=1).sort_values(ascending=False)[:20].index.tolist()
-    contaminated_percent = distance_result.loc[top10_contaminated_genes].mean(axis=1).mean()
+    sorted_average_distances = distance_result.sort_values(by='average_distance', ascending=False)
+    sorted_average_distances['is_top'] = [True] * top_cont_genes + \
+                                        [False] * (len(sorted_average_distances) - top_cont_genes)
+    top_contaminated_genes = sorted_average_distances.head(top_cont_genes).index.tolist()
+    contaminated_percent = sorted_average_distances.loc[top_contaminated_genes, 'average_cont_pct'].mean()
 
-    contamination_metric = {'Top 20 Contamination_Genes': ",".join(top20_contaminated_genes),
+    contamination_metric = {'Top Contamination_Genes': ",".join(top_contaminated_genes),
                             'Contamination_Level': contaminated_percent}
-    print(f'Contamination Genes: {",".join(top10_contaminated_genes)}')
+    print(f'Contamination Genes: {",".join(top_contaminated_genes)}')
     print(f'Contamination Level: {round(contaminated_percent, 3)}')
 
-    return filtered_contaminated_genes, distance_result, contamination_metric, background_counts
+    return sorted_average_distances, contamination_metric
 
 
 def calculate_jaccard_similarity(set1: set, set2: set) -> float:
@@ -675,16 +679,22 @@ def contaminated_genes_correction(
         counts: AnnData,
         usages: pd.DataFrame,
         spectra: pd.DataFrame,
+        average_distance: pd.DataFrame,
         filtered_mtx_path: str,
-        cont_genes: List[str],
         roc_threshold: float = 0.6,
         raw_counts_slot: str = 'counts'
 ):
+    top_cont_genes = list(average_distance[average_distance['is_top']].index)
+    cont_genes = list(average_distance.index)
+
     df = pd.concat([counts.obs['cluster'], usages], axis=1)
     ref = df.groupby('cluster').median().T
     norm_ref = ref / ref.sum(0)
+    norm_spectra = spectra / spectra.sum(0)
+
     common_topic = norm_ref.idxmax(axis=0).value_counts()
-    most_common_topic = common_topic.idxmax()
+    common_topic = common_topic[common_topic > 1].index
+    most_common_topic = max(common_topic, key=lambda topic: norm_spectra[topic][top_cont_genes].sum())
     cont_pos_cluster = norm_ref.idxmax(axis=0)[norm_ref.idxmax(axis=0) == most_common_topic].index.tolist()
 
     most_common_topic_genes = spectra[most_common_topic][spectra[most_common_topic] > 0].index.tolist()
