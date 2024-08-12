@@ -63,22 +63,21 @@ def correct_expression(args):
         environ_range=args.environ_range)
     usages, spectra, _nmf_kwargs = identify_module(
         counts=filtered_counts)
-    filtered_contaminated_genes, distance_result, contamination_metric, background_counts = \
-        contaminated_genes_detection(
-            counts=filtered_counts,
-            background_counts=background_counts,
-            usages=usages,
-            spectra=spectra,
-        )
-    with open(f"{args.output_dir}/{args.prefix}_contamination_metric.json", 'w') as json_file:
+    sorted_average_distances, contamination_metric = contaminated_genes_detection(
+        counts=filtered_counts,
+        background_counts=background_counts,
+        usages=usages,
+        spectra=spectra,
+    )
+    with open(f'{args.output_dir}/{args.prefix}_contamination_metric.json', 'w') as json_file:
         json.dump(contamination_metric, json_file)
     if args.evaluation_only == 'False':
         clear_data = contaminated_genes_correction(
             counts=filtered_counts,
             usages=usages,
             spectra=spectra,
+            average_distance=sorted_average_distances,
             filtered_mtx_path=args.filtered_matrix,
-            cont_genes=filtered_contaminated_genes,
             roc_threshold=args.roc_threshold,
             raw_counts_slot='counts'
         )
