@@ -28,6 +28,7 @@ CellClear = "CellClear.base_cli:main"
 
 [tool.setuptools]
 packages = ["CellClear"]
+package_data = { "CellClear": ["correct_expression"] }
 
 [tool.setuptools.dynamic]
 version = {attr = "CellClear.__version__"}

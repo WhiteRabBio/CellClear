@@ -597,7 +597,7 @@ def contaminated_genes_detection(
 
     sorted_average_distances = distance_result.sort_values(by='average_distance', ascending=False)
     sorted_average_distances['is_top'] = [True] * top_cont_genes + \
-                                        [False] * (len(sorted_average_distances) - top_cont_genes)
+                                         [False] * (len(sorted_average_distances) - top_cont_genes)
     top_contaminated_genes = sorted_average_distances.head(top_cont_genes).index.tolist()
     contaminated_percent = sorted_average_distances.loc[top_contaminated_genes, 'average_cont_pct'].mean()
 
@@ -684,17 +684,23 @@ def contaminated_genes_correction(
         roc_threshold: float = 0.6,
         raw_counts_slot: str = 'counts'
 ):
-    top_cont_genes = list(average_distance[average_distance['is_top']].index)
     cont_genes = list(average_distance.index)
 
     df = pd.concat([counts.obs['cluster'], usages], axis=1)
     ref = df.groupby('cluster').median().T
     norm_ref = ref / ref.sum(0)
-    norm_spectra = spectra / spectra.sum(0)
 
     common_topic = norm_ref.idxmax(axis=0).value_counts()
     common_topic = common_topic[common_topic > 1].index
-    most_common_topic = max(common_topic, key=lambda topic: norm_spectra[topic][top_cont_genes].sum())
+    print(f'Potential ambient topic include {",".join(common_topic)}...')
+
+    rank_df = pd.DataFrame(index=cont_genes)
+    for topic in spectra.columns:
+        ranked_genes = spectra[topic].rank(ascending=False)
+        rank_df[topic] = ranked_genes[ranked_genes.index.isin(cont_genes)]
+
+    most_common_topic = rank_df[common_topic].sum().sort_values().index[0]
+    print(f'{most_common_topic} is the most top ambient topic according to the rank of ambient genes...')
     cont_pos_cluster = norm_ref.idxmax(axis=0)[norm_ref.idxmax(axis=0) == most_common_topic].index.tolist()
 
     most_common_topic_genes = spectra[most_common_topic][spectra[most_common_topic] > 0].index.tolist()
