@@ -63,7 +63,7 @@ def correct_expression(args):
         environ_range=args.environ_range)
     usages, spectra, _nmf_kwargs = identify_module(
         counts=filtered_counts)
-    sorted_average_distances, contamination_metric = contaminated_genes_detection(
+    sorted_average_distances, contamination_metric= contaminated_genes_detection(
         counts=filtered_counts,
         background_counts=background_counts,
         usages=usages,
@@ -71,6 +71,11 @@ def correct_expression(args):
     )
     with open(f'{args.output_dir}/{args.prefix}_contamination_metric.json', 'w') as json_file:
         json.dump(contamination_metric, json_file)
+    if args.debug == 'True':
+        filtered_counts.write(f'{args.output_dir}/filtered_counts.h5ad', compression='lzf')
+        usages.to_csv(f'{args.output_dir}/usages.csv', sep=',')
+        spectra.to_csv(f'{args.output_dir}/spectra.csv', sep=',')
+        sorted_average_distances.to_csv(f'{args.output_dir}/distance.csv', sep=',')
     if args.evaluation_only == 'False':
         clear_data = contaminated_genes_correction(
             counts=filtered_counts,
