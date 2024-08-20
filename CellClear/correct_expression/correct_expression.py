@@ -296,8 +296,11 @@ def nnls_regression(x: pd.DataFrame, W: pd.DataFrame) -> np.array:
 
     for i in range(n_cols):
         col = x[:, i]
-        coeffs, residual = nnls(W, col)
-        y[:, i] = coeffs
+        try:
+            coeffs, residual = nnls(W, col)
+            y[:, i] = coeffs
+        except RuntimeError:
+            y[:, i] = 0
         residuals[i] = residual
 
     return y
@@ -691,7 +694,7 @@ def contaminated_genes_correction(
     norm_ref = ref / ref.sum(0)
 
     common_topic = norm_ref.idxmax(axis=0).value_counts()
-    common_topic = common_topic[common_topic > 1].index
+    common_topic = common_topic[common_topic >= 3].index
     print(f'Potential ambient topic include {",".join(common_topic)}...')
 
     rank_df = pd.DataFrame(index=cont_genes)
@@ -714,7 +717,7 @@ def contaminated_genes_correction(
                 rescue_cont_genes = set(rescue_genes) | rescue_cont_genes
             else:
                 pass
-    rescue_cont_genes = list(rescue_cont_genes)
+    rescue_cont_genes = list(rescue_cont_genes | set(cont_genes))
 
     try:
         counts.X = counts.layers[raw_counts_slot].copy()
@@ -731,6 +734,8 @@ def contaminated_genes_correction(
     for gene in rescue_cont_genes:
         tmp_exp = exp[gene]
         tmp_pos_cluster = [counts_ave[cont_pos_cluster].loc[gene].sort_values().index[-1]]
+        tmp_pos_cluster_value = float(counts_ave.loc[gene].iloc[int(tmp_pos_cluster[0])])
+        tmp_pos_cluster1 = counts_ave.loc[gene][counts_ave.loc[gene] > tmp_pos_cluster_value].index
         for i in cont_pos_cluster:
             pos_cells = cluster_dict[tmp_pos_cluster[0]]
             neg_cells = cluster_dict[i]
@@ -742,6 +747,7 @@ def contaminated_genes_correction(
             if roc_auc <= roc_threshold:
                 tmp_pos_cluster.append(i)
             tmp_pos_cluster = np.unique(tmp_pos_cluster).tolist()
+        tmp_pos_cluster = list(set(tmp_pos_cluster) | set(tmp_pos_cluster1))
         tmp_neg_cluster = [i for i in ref.columns if (i not in tmp_pos_cluster) & (i not in cont_pos_cluster)]
         pos_cells = [cluster_dict[i] for i in tmp_pos_cluster]
         pos_cells = list(chain.from_iterable(pos_cells))
@@ -753,6 +759,7 @@ def contaminated_genes_correction(
             neg_cells=neg_cells,
             gene=gene)
         gene_exp = pd.DataFrame(exp[gene])
+        ambient_threshold = 0 if np.isinf(ambient_threshold) else ambient_threshold
         gene_exp -= ambient_threshold
         corrected_exp = pd.concat([corrected_exp, gene_exp], axis=1)
 
