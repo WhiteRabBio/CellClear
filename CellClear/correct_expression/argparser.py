@@ -60,14 +60,5 @@ def add_subparser_args(subparsers: argparse) -> argparse:
                            dest='prefix', default=None,
                            required=True,
                            help="Prefix of output results.")
-    subparser.add_argument("--evaluation_only", nargs=None, type=str,
-                           dest='evaluation_only', default='False',
-                           required=False,
-                           help="whether need to remove ambient expression or "
-                                "just evaluate ambient level and find ambient genes.")
-    subparser.add_argument("--debug", nargs=None, type=str,
-                           dest='debug', default='False',
-                           required=False,
-                           help="output intermediate files for debug.")
 
     return subparsers
