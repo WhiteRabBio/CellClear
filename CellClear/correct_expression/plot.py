@@ -1,5 +1,10 @@
-from matplotlib import pyplot as plt
 import numpy as np
+import scanpy as sc
+import matplotlib
+matplotlib.use("Agg")
+from copy import copy
+from pathlib import Path
+from matplotlib import pyplot as plt
 
 
 def plot_distance_dot(dist, name, output, top=3):
@@ -21,3 +26,21 @@ def plot_distance_dot(dist, name, output, top=3):
                  fontsize=8)
     plt.savefig(f'{output}/cluster_{name}_distance_dot.png')
     plt.close()
+
+
+def plot_usages(counts, usages, spectra, topic_list, rescue_cont_genes, output):
+    reds = copy(matplotlib.cm.Reds)
+    reds.set_under('#a9a9a9')
+    adata = counts.copy()
+
+    for topic in topic_list:
+        Path(f'{output}/{topic}').mkdir(parents=True, exist_ok=True)
+        adata.obs[topic] = usages[topic]
+        sc.pl.umap(adata, color=topic, color_map=reds, vmin=0.0001)
+        plt.savefig(f'{output}/{topic}/{topic}_usage.png', bbox_inches='tight')
+        plt.close()
+
+        for gene in spectra.loc[rescue_cont_genes, topic].sort_values()[-10:].index:
+            sc.pl.umap(adata, color=gene, color_map=reds, vmin=0.0001, layer='normalised')
+            plt.savefig(f'{output}/{topic}/{topic}_{gene}_normalised_expression.png', bbox_inches='tight')
+            plt.close()

@@ -13,7 +13,7 @@ FEATURE_FILE_NAME = 'features.tsv.gz'
 BARCODE_FILE_NAME = 'barcodes.tsv.gz'
 
 
-def _load_data(data_dir: str) -> AnnData:
+def _load_data(data_dir: str, verbose=True) -> AnnData:
     """Load matrix from the input_file"""
 
     # Detect input data type.
@@ -22,18 +22,18 @@ def _load_data(data_dir: str) -> AnnData:
     # Load the dataset.
     try:
         if data_type == '10x-format':
-
-            print(f"Loading data from directory {data_dir}")
+            if verbose:
+                print(f"Loading data from directory {data_dir}")
             data = sc.read_10x_mtx(data_dir)
 
         elif data_type == 'h5-format':
-
-            print(f"Loading data from file {data_dir}")
+            if verbose:
+                print(f"Loading data from file {data_dir}")
             data = sc.read_10x_h5(data_dir)
 
         else:
-
-            print(f"Loading data from file {data_dir}")
+            if verbose:
+                print(f"Loading data from file {data_dir}")
             data = sc.read_csv(Path(data_dir), delimiter="\t").T
 
     except Exception as e:
@@ -234,8 +234,9 @@ def output_10x_matrix(data, matrix_dir):
     """
     Function for output 10X-format matrix
     """
-    sparse_mtx = scipy.sparse.coo_matrix(data.X.T)
+    os.makedirs(f'{matrix_dir}', exist_ok=True)
 
+    sparse_mtx = scipy.sparse.coo_matrix(data.X.T)
     with gzip.open(f'{matrix_dir}/{MATRIX_FILE_NAME}', 'wb') as f:
         io.mmwrite(f, sparse_mtx)
 

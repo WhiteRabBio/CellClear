@@ -12,6 +12,9 @@ from CellClear.correct_expression.utils import _load_data, cells_cluster
 from itertools import chain
 from scanpy._utils import select_groups
 from scanpy.preprocessing._utils import _get_mean_var
+from collections import defaultdict
+from multiprocessing import Pool
+from tqdm import tqdm
 import scanpy as sc
 import numpy as np
 import pandas as pd
@@ -92,7 +95,7 @@ def _preprocess_data(
         filtered_counts.obs['cluster'].astype('str').map(
             filtered_counts.obs['cluster'].astype('str').value_counts()
         ) > min_cluster_num
-    ]
+        ]
 
     # filter genes, Only keep genes in both Anndata objects
     keep_genes = sorted(list(set(filtered_counts.var_names) & set(background_counts.var_names)))
@@ -678,64 +681,18 @@ def cal_ambient_threshold(
     return optimal_th, roc_auc
 
 
-def contaminated_genes_correction(
-        counts: AnnData,
-        usages: pd.DataFrame,
-        spectra: pd.DataFrame,
-        average_distance: pd.DataFrame,
-        filtered_mtx_path: str,
-        roc_threshold: float = 0.6,
-        raw_counts_slot: str = 'counts'
-):
-    cont_genes = list(average_distance.index)
-
-    df = pd.concat([counts.obs['cluster'], usages], axis=1)
-    ref = df.groupby('cluster').median().T
-    norm_ref = ref / ref.sum(0)
-
-    common_topic = norm_ref.idxmax(axis=0).value_counts()
-    common_topic = common_topic[common_topic >= 3].index
-    print(f'Potential ambient topic include {",".join(common_topic)}...')
-
-    rank_df = pd.DataFrame(index=cont_genes)
-    for topic in spectra.columns:
-        ranked_genes = spectra[topic].rank(ascending=False)
-        rank_df[topic] = ranked_genes[ranked_genes.index.isin(cont_genes)]
-
-    most_common_topic = rank_df[common_topic].sum().sort_values().index[0]
-    print(f'{most_common_topic} is the most top ambient topic according to the rank of ambient genes...')
-    cont_pos_cluster = norm_ref.idxmax(axis=0)[norm_ref.idxmax(axis=0) == most_common_topic].index.tolist()
-
-    most_common_topic_genes = spectra[most_common_topic][spectra[most_common_topic] > 0].index.tolist()
-    spectra_cor = spectra.loc[most_common_topic_genes].T.corr()
-
-    rescue_cont_genes = set()
-    for gene in cont_genes:
-        if gene in spectra_cor.columns:
-            rescue_genes = spectra_cor[spectra_cor[gene] >= 0.95].index
-            if len(rescue_genes) > 1:
-                rescue_cont_genes = set(rescue_genes) | rescue_cont_genes
-            else:
-                pass
-    rescue_cont_genes = list(rescue_cont_genes | set(cont_genes))
-
-    try:
-        counts.X = counts.layers[raw_counts_slot].copy()
-    except ValueError:
-        del counts.X
-        counts.X = counts.layers[raw_counts_slot].copy()
-
-    exp = counts.to_df()
-    counts_ave = calculate_average_expression(counts, rescue_cont_genes, raw_counts_slot)
+def process_topic(topic, position, common_topic_dict, topic_dict, exp, counts_ave, cluster_dict, roc_threshold):
+    pbar = tqdm(total=len(common_topic_dict[topic]), desc=f"Processing {topic}", position=position, leave=True)
     corrected_exp = pd.DataFrame()
+    cont_pos_cluster = topic_dict[topic]
 
-    counts.obs['barcodes'] = counts.obs_names
-    cluster_dict = counts.obs.groupby('cluster')['barcodes'].apply(list).to_dict()
-    for gene in rescue_cont_genes:
+    # correct for each gene
+    for gene in common_topic_dict[topic]:
         tmp_exp = exp[gene]
-        tmp_pos_cluster = [counts_ave[cont_pos_cluster].loc[gene].sort_values().index[-1]]
-        tmp_pos_cluster_value = float(counts_ave.loc[gene].iloc[int(tmp_pos_cluster[0])])
-        tmp_pos_cluster1 = counts_ave.loc[gene][counts_ave.loc[gene] > tmp_pos_cluster_value].index
+        tmp_pos_cluster, tmp_pos_exp = [counts_ave.loc[gene, cont_pos_cluster].idxmax()], \
+            counts_ave.loc[gene, cont_pos_cluster].max()
+
+        # need to remove some cluster
         for i in cont_pos_cluster:
             pos_cells = cluster_dict[tmp_pos_cluster[0]]
             neg_cells = cluster_dict[i]
@@ -746,31 +703,132 @@ def contaminated_genes_correction(
                 gene=gene)
             if roc_auc <= roc_threshold:
                 tmp_pos_cluster.append(i)
-            tmp_pos_cluster = np.unique(tmp_pos_cluster).tolist()
-        tmp_pos_cluster = list(set(tmp_pos_cluster) | set(tmp_pos_cluster1))
-        tmp_neg_cluster = [i for i in ref.columns if (i not in tmp_pos_cluster) & (i not in cont_pos_cluster)]
-        pos_cells = [cluster_dict[i] for i in tmp_pos_cluster]
-        pos_cells = list(chain.from_iterable(pos_cells))
-        neg_cells = [cluster_dict[i] for i in tmp_neg_cluster]
-        neg_cells = list(chain.from_iterable(neg_cells))
+        tmp_pos_cluster = list(set(tmp_pos_cluster).union(counts_ave.columns[counts_ave.loc[gene] > tmp_pos_exp]))
+        tmp_neg_cluster = [i for i in counts_ave.columns if i not in tmp_pos_cluster]
+
+        # start roc
+        pos_cells = list(chain.from_iterable(cluster_dict[i] for i in tmp_pos_cluster))
+        neg_cells = list(chain.from_iterable(cluster_dict[i] for i in tmp_neg_cluster))
         ambient_threshold, roc_auc = cal_ambient_threshold(
             exp=tmp_exp,
             pos_cells=pos_cells,
             neg_cells=neg_cells,
             gene=gene)
-        gene_exp = pd.DataFrame(exp[gene])
-        ambient_threshold = 0 if np.isinf(ambient_threshold) else ambient_threshold
-        gene_exp -= ambient_threshold
+        gene_exp = exp[gene] - (0 if np.isinf(ambient_threshold) else ambient_threshold)
         corrected_exp = pd.concat([corrected_exp, gene_exp], axis=1)
+        pbar.update(1)
 
-    corrected_exp = corrected_exp.applymap(lambda x: max(x, 0))
-    raw_counts = _load_data(filtered_mtx_path)
+    pbar.close()
+
+    return topic, corrected_exp
+
+
+def contaminated_genes_correction(
+        counts: AnnData,
+        usages: pd.DataFrame,
+        spectra: pd.DataFrame,
+        average_distance: pd.DataFrame,
+        filtered_mtx_path: str,
+        roc_threshold: float = 0.6,
+        num_processes: int = 4,
+        raw_counts_slot: str = 'counts'
+):
+    # extract contaminated genes identified in previous step
+    cont_genes = list(average_distance.index)
+
+    # find topics that have at least two clusters contributing the most to them
+    df = pd.concat([counts.obs['cluster'], usages], axis=1)
+    ref = df.groupby('cluster').median().T
+    norm_ref = ref / ref.sum(0)
+
+    common_topic = list(norm_ref.idxmax(axis=0).value_counts().index)
+    print(f'Potential ambient topic include {",".join(common_topic)}...')
+
+    # find clusters which support each topic identified
+    topic_dict = {}
+    for topic in common_topic:
+        topic_dict[topic] = norm_ref.idxmax(axis=0)[norm_ref.idxmax(axis=0) == topic].index.tolist()
+
+    # contaminated genes always express higher in the related source contaminated cluster
+    counts_ave = calculate_average_expression(counts, cont_genes, raw_counts_slot)
+    gene_exp_high_df = counts_ave[
+        [cluster for clusters in topic_dict.values() for cluster in clusters]
+    ].apply(lambda row: row.nlargest(2).index.tolist(), axis=1)
+
+    gene_exp_high_df = pd.DataFrame(gene_exp_high_df.tolist(), index=counts_ave.index, columns=['Top_1', 'Top_2'])
+    gene_exp_high_df = gene_exp_high_df.applymap(
+        lambda cluster: {c: t for t, c in topic_dict.items() for c in c}.get(cluster))
+
+    # create gene family
+    gene_family = gene_exp_high_df[gene_exp_high_df['Top_1'] == gene_exp_high_df['Top_2']]['Top_1'].to_dict()
+    cont_genes_2 = gene_exp_high_df[gene_exp_high_df['Top_1'] != gene_exp_high_df['Top_2']]
+    spectra_filtered_cor = spectra.loc[cont_genes].T.corr().loc[cont_genes_2.index]
+
+    for gene, row in spectra_filtered_cor.iterrows():
+        similar_genes = row[row >= 0.95].index.difference([gene])
+        if similar_genes.empty or not set(similar_genes).intersection(gene_family):
+            gene_family[gene] = cont_genes_2.loc[gene, 'Top_1']
+        else:
+            gene_family[gene] = gene_family[next(iter(set(similar_genes).intersection(gene_family)))]
+
+    # find more contaminated genes
+    spectra_cor = spectra.T.corr()
+    spectra_cor = spectra_cor.loc[[gene for gene in spectra_cor.index if gene not in cont_genes]]
+    rescue_genes = {}
+    for gene, row in spectra_cor.iterrows():
+        similar_genes = row[row >= 0.95].index.difference([gene])
+        existing_genes = set(similar_genes).intersection(gene_family)
+        if similar_genes.empty or not existing_genes:
+            pass
+        else:
+            related_gene = next(iter(existing_genes))
+            rescue_genes[gene] = gene_family[related_gene]
+
+    gene_family = {**gene_family, **rescue_genes}
+    gene_family_df = pd.DataFrame(gene_family, index=[0]).T
+    common_topic_dict = defaultdict(list)
+    for gene, topic in gene_family.items():
+        common_topic_dict[topic].append(gene)
+
+    rescue_cont_genes = list(set(gene_family))
+    print(f'Totally find {len(rescue_cont_genes)} ambient genes...')
+
+    try:
+        counts.X = counts.layers[raw_counts_slot].copy()
+    except ValueError:
+        del counts.X
+        counts.X = counts.layers[raw_counts_slot].copy()
+
+    exp = counts.to_df()
+    counts_ave = calculate_average_expression(counts, rescue_cont_genes, raw_counts_slot)
+
+    # start remove ambient expression
+    print('Start removing ambient expression...')
+    counts.obs['barcodes'] = counts.obs_names
+    cluster_dict = counts.obs.groupby('cluster')['barcodes'].apply(list).to_dict()
+
+    positions = list(range(num_processes))
+    extended_positions = positions * (len(common_topic_dict) // num_processes) + positions[:len(
+        common_topic_dict) % num_processes]
+
+    with Pool(processes=num_processes) as pool:
+        results = pool.starmap(process_topic,
+                               [(
+                                   topic, pos, common_topic_dict, topic_dict, exp, counts_ave, cluster_dict,
+                                   roc_threshold)
+                                   for topic, pos in zip(common_topic_dict.keys(), extended_positions)]
+                               )
+
+    corrected_exp_dict = {topic: corrected_exp for topic, corrected_exp in results}
+    corrected_exp = pd.concat(corrected_exp_dict.values(), axis=1).applymap(lambda x: max(x, 0))
+    raw_counts = _load_data(filtered_mtx_path, verbose=False)
     raw_counts_exp = raw_counts.to_df()
     raw_counts_exp = pd.concat([raw_counts_exp.drop(rescue_cont_genes, axis=1), corrected_exp], axis=1)
     raw_counts_exp = raw_counts_exp.dropna()
     clear_data = AnnData(X=raw_counts_exp.astype("int"))
+    print('Finish...')
 
-    return clear_data
+    return clear_data, gene_family_df, common_topic
 
 
 def _init_nmf(

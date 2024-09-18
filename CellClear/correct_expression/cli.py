@@ -7,6 +7,7 @@ from CellClear.correct_expression.correct_expression import (
     contaminated_genes_correction,
 )
 from CellClear.correct_expression.utils import output_10x_matrix
+from CellClear.correct_expression.plot import plot_usages
 from CellClear.base_cli import AbstractCLI
 import json
 import os
@@ -28,13 +29,9 @@ class CLI(AbstractCLI):
         try:
             args.filtered_matrix = os.path.expanduser(args.filtered_matrix)
             args.raw_matrix = os.path.expanduser(args.raw_matrix)
-            if args.evaluation_only == 'True':
-                print('Only output contamination level...')
-            else:
-                os.makedirs(f'{args.output_dir}/CellClear_clean_matrix', exist_ok=True)
         except TypeError:
             raise ValueError(
-                "Problem with provided input and output paths."
+                "Problem with provided input paths."
             )
 
         self.args = args
@@ -63,30 +60,32 @@ def correct_expression(args):
         environ_range=args.environ_range)
     usages, spectra, _nmf_kwargs = identify_module(
         counts=filtered_counts)
-    sorted_average_distances, contamination_metric= contaminated_genes_detection(
+    sorted_average_distances, contamination_metric = contaminated_genes_detection(
         counts=filtered_counts,
         background_counts=background_counts,
         usages=usages,
         spectra=spectra,
     )
-    with open(f'{args.output_dir}/{args.prefix}_contamination_metric.json', 'w') as json_file:
+    clear_data, gene_family_df, common_topic = contaminated_genes_correction(
+        counts=filtered_counts,
+        usages=usages,
+        spectra=spectra,
+        average_distance=sorted_average_distances,
+        filtered_mtx_path=args.filtered_matrix,
+        roc_threshold=args.roc_threshold,
+        num_processes=4,
+        raw_counts_slot='counts'
+    )
+
+    # output
+    output_10x_matrix(clear_data, f'{args.output_dir}/matrix')
+    with open(f'{args.output_dir}/metric.json', 'w') as json_file:
         json.dump(contamination_metric, json_file)
-    if args.debug == 'True':
-        filtered_counts.write(f'{args.output_dir}/filtered_counts.h5ad', compression='lzf')
-        usages.to_csv(f'{args.output_dir}/usages.csv', sep=',')
-        spectra.to_csv(f'{args.output_dir}/spectra.csv', sep=',')
-        sorted_average_distances.to_csv(f'{args.output_dir}/distance.csv', sep=',')
-    if args.evaluation_only == 'False':
-        clear_data = contaminated_genes_correction(
-            counts=filtered_counts,
-            usages=usages,
-            spectra=spectra,
-            average_distance=sorted_average_distances,
-            filtered_mtx_path=args.filtered_matrix,
-            roc_threshold=args.roc_threshold,
-            raw_counts_slot='counts'
-        )
-        output_10x_matrix(clear_data, f'{args.output_dir}/CellClear_clean_matrix')
+    filtered_counts.write(f'{args.output_dir}/counts.h5ad', compression='lzf')
+    usages.to_csv(f'{args.output_dir}/usages.csv', sep=',')
+    spectra.to_csv(f'{args.output_dir}/spectra.csv', sep=',')
+    sorted_average_distances.to_csv(f'{args.output_dir}/distance.csv', sep=',')
+    plot_usages(filtered_counts, usages, spectra, common_topic, list(gene_family_df.index), f'{args.output_dir}/topic')
 
 
 def main(args):
