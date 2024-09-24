@@ -88,6 +88,9 @@ def _preprocess_data(
             environ_range[0], environ_range[1], inclusive='neither'
         )
         background_counts_num = col_indices.sum()
+        if environ_range[1] >= max_umi_count and environ_range[0] <= min_umi_count:
+            print("Cannot adjust environ_range any further, breaking the loop.")
+            break
         if environ_range[1] < max_umi_count:
             environ_range[1] += 10
         elif environ_range[0] > min_umi_count:
