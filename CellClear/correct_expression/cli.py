@@ -57,7 +57,7 @@ def correct_expression(args):
         raw_mtx_path=args.raw_matrix,
         resolution=args.resolution,
         min_background_counts_num=args.min_bg_num,
-        environ_range=args.environ_range)
+        environ_range=[int(args.min_environ_umi), int(args.max_environ_umi)])
     usages, spectra, _nmf_kwargs = identify_module(
         counts=filtered_counts)
     sorted_average_distances, contamination_metric = contaminated_genes_detection(

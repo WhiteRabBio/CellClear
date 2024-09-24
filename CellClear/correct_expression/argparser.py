@@ -30,8 +30,13 @@ def add_subparser_args(subparsers: argparse) -> argparse:
                            help="matrix before cell calling, "
                                 "support `raw_feature_bc_matrix` from cellranger"
                                 "or a normal matrix (row as genes, column as barcodes")
-    subparser.add_argument("--environ_range", nargs=None,
-                           dest='environ_range', default=[60, 100],
+    subparser.add_argument("--min_environ_umi", nargs=None,
+                           dest='min_environ_umi', default=60,
+                           required=False,
+                           help="CellClear needs to extract information from background,"
+                                "low UMI barcodes will contain pure ambient gene expression")
+    subparser.add_argument("--max_environ_umi", nargs=None,
+                           dest='max_environ_umi', default=100,
                            required=False,
                            help="CellClear needs to extract information from background,"
                                 "low UMI barcodes will contain pure ambient gene expression")

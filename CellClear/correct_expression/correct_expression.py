@@ -35,7 +35,8 @@ def _preprocess_data(
         resolution: float = 1.2,
         min_background_counts_num: int = 5000,
         min_cluster_num: int = 50,
-        max_umi_count: int = 500,
+        max_umi_count: int = 200,
+        min_umi_count: int = 50,
         environ_range: List[int] = [60, 100],
         black_gene_list: List[str] = None,
 ) -> Tuple[AnnData, AnnData]:
@@ -54,6 +55,8 @@ def _preprocess_data(
         minimum cluster number
     max_umi_count
         maximum umi count for selecting background barcodes
+    min_umi_count
+        minimum umi count for selecting background barcodes
     environ_range
         umi range for selecting background barcodes
     black_gene_list
@@ -79,14 +82,19 @@ def _preprocess_data(
 
     # prevent getting stuck in an infinite loop
     background_counts_num = 0
-    while (background_counts_num <= min_background_counts_num) \
-            and (environ_range[1] < max_umi_count):
+    while (background_counts_num < min_background_counts_num) and \
+            (environ_range[1] <= max_umi_count or environ_range[0] > min_umi_count):
         col_indices = background_counts.obs['umis'].between(
             environ_range[0], environ_range[1], inclusive='neither'
         )
         background_counts_num = col_indices.sum()
-        environ_range[1] += 10
+        if environ_range[1] < max_umi_count:
+            environ_range[1] += 10
+        elif environ_range[0] > min_umi_count:
+            environ_range[0] -= 2
+
     background_counts = background_counts[col_indices, :]
+    print(f"Final umis range used: [{environ_range[0]}, {environ_range[1]}]")
 
     # fetch the clustering info
     filtered_counts = _exclude_genes(filtered_counts, black_gene_list=black_gene_list)
@@ -572,6 +580,7 @@ def contaminated_genes_detection(
         raise Exception('No barcodes in background similar to cluster from real cell barcodes')
     background_counts = background_counts[deconv_result.index.tolist(), :]
     background_counts.obs['cluster'] = deconv_result['max_indices'].astype('category')
+    print(f'{background_counts.shape[0]} background cells will be used to perform smooth spline...')
 
     # calculate average expression of each cluster in real cells and background
     background_ave = calculate_average_expression(background_counts, list(background_counts.var_names), slot)
