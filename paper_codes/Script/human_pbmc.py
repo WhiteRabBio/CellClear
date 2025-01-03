@@ -60,8 +60,8 @@ def annotation():
                           '2': 'Treg 4/helper T', '3': 'T CD8+ naive',
                           '4': 'B naive', '5': 'T CD8+ TE/EM',
                           '6': 'T γδ/MAIT', '7': 'B memory',
-                          '8': 'T CD4+ naive', '9': 'NK',
-                          '10': 'Monocyte NC', '11': 'Progenitors', '12': 'pDCs'}
+                          '8': 'NK',
+                          '9': 'Monocyte NC', '10': 'Progenitors', '11': 'pDCs'}
     adata = sc.read(
         'filtered_h5ad/Uncorrected_pbmc8k.h5ad')
     adata.obs['celltype'] = adata.obs['cluster'].map(cluster2annotation).astype('category')
@@ -74,8 +74,8 @@ def annotation():
                           '2': 'T CD8+ naive', '3': 'Treg 4/helper T',
                           '4': 'B naive', '5': 'T CD8+ TE/EM',
                           '6': 'T γδ/MAIT', '7': 'B memory',
-                          '8': 'NK', '9': 'T CD4+ naive',
-                          '10': 'Monocyte NC', '11': 'Progenitors', '12': 'pDCs'}
+                          '8': 'NK',
+                          '9': 'Monocyte NC', '10': 'Progenitors', '11': 'pDCs'}
     adata = sc.read(
         'filtered_h5ad/CellBender_pbmc8k.h5ad')
     adata.obs['celltype'] = adata.obs['cluster'].map(cluster2annotation).astype('category')
@@ -109,7 +109,7 @@ def integration_h5ad():
     return adatas
 
 
-def draw_fig3A(adatas):
+def draw_umap(adatas):
     fig, axes = plt.subplots(
         1, 3,
         figsize=(48, 12),
@@ -121,16 +121,16 @@ def draw_fig3A(adatas):
             '2: Treg 4/helper T', '3: T CD8+ naive',
             '4: B naive', '5: T CD8+ TE/EM',
             '6: T γδ/MAIT', '7: B memory',
-            '8: T CD4+ naive', '9: NK',
-            '10: Monocyte NC', '11: Progenitors', '12: pDCs'
+            '8: NK',
+            '9: Monocyte NC', '10: Progenitors', '11: pDCs'
         ],
         'CellBender': [
             '0: Monocyte C', '1: T CD4+ naive',
             '2: T CD8+ naive', '3: Treg 4/helper T',
             '4: B naive', '5: T CD8+ TE/EM',
             '6: T γδ/MAIT', '7: B memory',
-            '8: NK', '9: T CD4+ naive',
-            '10: Monocyte NC', '11: Progenitors', '12: pDCs'
+            '8: NK',
+            '9: Monocyte NC', '10: Progenitors', '11: pDCs'
         ],
         'CellClear': [
             '0: Monocyte C', '1: T CD4+ naive',
@@ -145,6 +145,7 @@ def draw_fig3A(adatas):
         method_label = labels[title]
         colors = [color[i] for i in range(len(method_label))]
 
+        adata.uns['cluster_colors'] = colors
         sc.pl.umap(
             adata,
             color='cluster',
@@ -177,7 +178,7 @@ def draw_fig3A(adatas):
     plt.close()
 
 
-def draw_fig3B(adatas):
+def draw_dotplot(adatas):
     fig, axes = plt.subplots(
         1, 3,
         figsize=(48, 12),
@@ -210,7 +211,7 @@ def draw_fig3B(adatas):
     plt.close()
 
 
-def draw_fig3C(adatas):
+def draw_feature(adatas):
     gene_names = ['LYZ', 'HLA-DRA']
 
     for idx, gene in enumerate(gene_names):
